@@ -1,30 +1,90 @@
 module Foo = struct
     type rule = {
         bar : int;
-    };;
+    }
 end
 
-type tableType =
+type table =
     | Nat
     | Raw
     | Filter
     | Mangle
-    | Security;;
+    | Security
+
+let tableToStr = function
+    | Nat -> "nat"
+    | Raw -> "raw"
+    | Filter -> "filter"
+    | Mangle -> "mangle"
+    | Security -> "security"
+
+type target =
+    | Accept
+    | Drop
+    | Return
+    | Null
+
+let targetToStr = function
+    | Accept -> "ACCEPT"
+    | Drop -> "DROP"
+    | Return -> "RETURN"
+    | Null -> "-"
 
 module Parser = struct
+    exception ParseError of string
+
     type line =
-        | Table of tableType
-        | Chain
-        | Rule;;
+        | Table of table
+        | Chain of string * target
+        | Rule
+
+    let lineToStr = function
+        | Table x -> "table " ^ (tableToStr x)
+        | Chain (name, target) -> "chain " ^ name ^ " " ^ (targetToStr target)
+        | Rule -> "rule"
+
+    let strToTable = function
+        | "*nat" -> Nat
+        | "*raw" -> Raw
+        | "*filter" -> Filter
+        | "*mangle" -> Mangle
+        | "*security" -> Security
+        | x -> raise (ParseError ("invalid table " ^ x))
+
+    let strToTarget = function
+        | "ACCEPT" -> Accept
+        | "DROP" -> Drop
+        | "RETURN" -> Return
+        | "-" -> Null
+        | x -> raise (ParseError ("invalid target " ^ x))
+
+    let parseChain line =
+        let re = Regexp.regexp ":([a-zA-Z0-9_-]+)\\s([a-zA-Z0-9_-]+)\\s.*" in
+        match Regexp.string_match re line 0 with
+            | None -> raise (ParseError ("invalid chain " ^ line))
+            | Some result ->
+                let chainName = Regexp.matched_group result 1 in
+                let target = Regexp.matched_group result 2 in
+                match chainName, target with
+                    | None, _ -> raise (ParseError ("invalid chain " ^ line))
+                    | _, None -> raise (ParseError ("invalid chain " ^ line))
+                    | Some n, Some t -> Chain (n, (strToTarget t))
+
+    let parseRule line = Rule
 
     let parse text =
         let lines = Regexp.split (Regexp.regexp "\n") text in
         let lines = List.filter (fun l -> (String.length l) > 0) lines in
         let lines = List.filter (fun l -> l.[0] != '#') lines in
-
-        lines;;
+        let rec mapfn line =
+            if line.[0] = '*' then Table (strToTable line)
+            else if line.[0] = ':' then (parseChain line)
+            else (parseRule line) in
+        let lines = List.map mapfn lines in
+        lines
 end
 
+(* testing *)
 let r = {Foo.bar = 777};;
 
 Printf.printf "abc %d\n" r.Foo.bar;;
@@ -65,6 +125,6 @@ COMMIT
 let rec p x =
     match x with
     | [] -> ()
-    | hd::tl -> Printf.printf ": %s\n" hd; p tl;;
+    | hd::tl -> Printf.printf "%s\n" (Parser.lineToStr hd); p tl;;
 
 p (Parser.parse s);;
