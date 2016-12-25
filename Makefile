@@ -20,6 +20,10 @@ build: $(GENERATED_JS)
 %.js: %.byte Makefile
 	js_of_ocaml $<
 
+.PHONY: test
+test: $(GENERATED_JS)
+	@node ipt.js
+
 .PHONY: clean
 clean:
 	rm -f *.cmi
